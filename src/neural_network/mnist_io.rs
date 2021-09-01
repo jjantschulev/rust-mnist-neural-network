@@ -2,11 +2,22 @@ use std::thread;
 use std::{io::Read, io::Seek};
 extern crate num_cpus;
 
-use crate::neural_network::neural_network::NetworkValueType;
+use crate::neural_network::neural_network::{NetworkValue, TrainingItem};
 
 pub struct Image {
-    pub pixels: Vec<NetworkValueType>,
+    pub pixels: Vec<NetworkValue>,
     pub label: u8,
+}
+
+impl TrainingItem for Image {
+    fn inputs(&self) -> &[NetworkValue] {
+        &self.pixels
+    }
+    fn outputs(&self) -> Vec<NetworkValue> {
+        let mut outputs = vec![0.0; 10];
+        outputs[self.label as usize] = 1.0;
+        outputs
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -118,8 +129,8 @@ fn load_image(
         for x in 0..image_height {
             let i = y * image_width + x;
             image.pixels[i] = (image_bytes[(i + (image_width * image_height) * index) as usize]
-                as NetworkValueType)
-                / (255 as NetworkValueType);
+                as NetworkValue)
+                / (255 as NetworkValue);
         }
     }
 

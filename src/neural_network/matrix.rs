@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::ops::{AddAssign, Mul};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Matrix<T: Clone + Default> {
     width: usize,
     height: usize,
@@ -83,8 +84,18 @@ impl<T: Clone + Default> Matrix<T> {
         self.values[y * self.width + x] = v;
     }
 
-    pub fn get_vals(self) -> Vec<T> {
+    pub fn map<F: Fn(&T, usize) -> T>(&mut self, f: F) {
+        for i in 0..self.values.len() {
+            self.values[i] = f(&self.values[i], i);
+        }
+    }
+
+    pub fn into_vals(self) -> Vec<T> {
         return self.values;
+    }
+
+    pub fn vals(&self) -> &[T] {
+        return &self.values;
     }
 }
 
@@ -92,16 +103,42 @@ impl<T: AddAssign + Mul<Output = T> + Clone + Default + Send + Sync> Mul for Mat
     type Output = Matrix<T>;
 
     fn mul(self, rhs: Matrix<T>) -> Matrix<T> {
-        assert_eq!(self.width, rhs.height);
+        Matrix::multiply_sync(&self, &rhs)
+    }
+}
+
+impl<T: AddAssign + Mul<Output = T> + Clone + Default + Send + Sync> Matrix<T> {
+    pub fn multiply_sync(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Matrix<T> {
+        assert_eq!(lhs.width, rhs.height);
         let o_w = rhs.width;
-        let o_h = self.height;
+        let o_h = lhs.height;
+
+        let mut m: Matrix<T> = Matrix::new(o_w, o_h);
+
+        for x in 0..o_w {
+            for y in 0..o_h {
+                let mut val: T = Default::default();
+                for i in 0..lhs.width {
+                    val += lhs.get(i, y).unwrap().clone() * rhs.get(x, i).unwrap().clone();
+                }
+                m.set(x, y, val);
+            }
+        }
+
+        m
+    }
+
+    pub fn multiply_parallel(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Matrix<T> {
+        assert_eq!(lhs.width, rhs.height);
+        let o_w = rhs.width;
+        let o_h = lhs.height;
 
         let output = crate::neural_network::parallel_worker::map_range(&(0..(o_w * o_h)), |j| {
             let x = j % o_w;
             let y = j / o_w;
             let mut val: T = Default::default();
-            for i in 0..self.width {
-                val += self.get(i, y).unwrap().clone() * rhs.get(x, i).unwrap().clone();
+            for i in 0..lhs.width {
+                val += lhs.get(i, y).unwrap().clone() * rhs.get(x, i).unwrap().clone();
             }
             val
         })
@@ -110,30 +147,6 @@ impl<T: AddAssign + Mul<Output = T> + Clone + Default + Send + Sync> Mul for Mat
         Matrix::from(o_w, o_h, output)
     }
 }
-
-// impl<T: AddAssign + Mul<Output = T> + Clone + Default + Send + Sync> Mul for Matrix<T> {
-//     type Output = Matrix<T>;
-
-//     fn mul(self, rhs: Matrix<T>) -> Matrix<T> {
-//         assert_eq!(self.width, rhs.height);
-//         let o_w = rhs.width;
-//         let o_h = self.height;
-
-//         let mut m: Matrix<T> = Matrix::new(o_w, o_h);
-
-//         for x in 0..o_w {
-//             for y in 0..o_h {
-//                 let mut val: T = Default::default();
-//                 for i in 0..self.width {
-//                     val += self.get(i, y).unwrap().clone() * rhs.get(x, i).unwrap().clone();
-//                 }
-//                 m.set(x, y, val);
-//             }
-//         }
-
-//         m
-//     }
-// }
 
 impl<T: PartialEq + Clone + Default> PartialEq for Matrix<T> {
     fn eq(&self, other: &Matrix<T>) -> bool {
